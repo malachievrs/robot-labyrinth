@@ -1,0 +1,304 @@
+package com.lab.robot.interpreter.parser;
+
+import com.lab.robot.interpreter.ast.*;
+import com.lab.robot.interpreter.ast.declarations.*;
+import com.lab.robot.interpreter.ast.statements.*;
+import com.lab.robot.interpreter.ast.expressions.*;
+import com.lab.robot.interpreter.ast.robot.*;
+import com.lab.robot.interpreter.lexer.Lexer;
+import java_cup.runtime.*;
+import java.util.ArrayList;
+import java.util.List;
+
+parser code {:
+:};
+
+/* ====================== Терминалы =========================== */
+terminal SEMICOLON, COMMA, COLON, LPAREN, RPAREN,
+         LBRACE, RBRACE, LBRACKET, RBRACKET;
+terminal EQ, ADD, SUB, CONJUNCT, DISJUNCT, NOT, LESS, GREATER;
+terminal DOT_ACCESS;
+terminal SEISU, RONRI, RIPPTAI, HAIRETSU;
+terminal SHINRI, USO;
+terminal SHUKI, KIDO, SHUSHI, SORENARA;
+terminal KANSU, RETURN;
+terminal RUIKEI, JIGEN;
+terminal String IDENTIFIER;
+terminal Integer INT_LITERAL;
+terminal String HEX_LITERAL;
+terminal MOVE_UP, MOVE_DOWN, MOVE_LEFT, MOVE_RIGHT,
+         MOVE_FORWARD, MOVE_BACK;
+terminal MEASURE_UP, MEASURE_DOWN, MEASURE_LEFT, MEASURE_RIGHT,
+         MEASURE_FORWARD, MEASURE_BACK;
+terminal GETPOSITION;
+terminal BREAK;
+terminal NEG;
+
+/* ==================== Нетерминалы =========================== */
+non terminal Program program;
+non terminal List<Statement> statement_list;
+non terminal List<Statement> opt_statement_list;
+non terminal Statement statement;
+non terminal Statement var_decl;
+non terminal Expression opt_init;
+non terminal Expression opt_init_log;
+non terminal Statement array_var_decl;
+non terminal List<Expression> dim_list;
+non terminal Expression expr;
+non terminal Expression logic_or_expr;
+non terminal Expression logic_and_expr;
+non terminal Expression compare_expr;
+non terminal Expression arithmetic_expr;
+non terminal Expression unary_expr;
+non terminal Expression postfix_expr;
+non terminal Expression atom_expr;
+non terminal Expression ruikei_arg;
+non terminal IfStatement if_stmt;
+non terminal LoopStatement loop_stmt;
+non terminal FunctionDecl func_decl;
+non terminal ReturnStatement return_stmt;
+non terminal ExpressionStatement expr_stmt;
+non terminal List<Expression> arg_list;
+non terminal List<Expression> index_list;
+non terminal Type type;
+non terminal Type opt_type;
+non terminal List<Param> param_list;
+non terminal Param param;
+non terminal List<RobotAction> robot_action_list;
+non terminal RobotAction robot_action;
+non terminal Expression robot_seq_expr;   // выражение-последовательность (возвращает значение)
+
+/* ==================== Приоритеты ============================ */
+precedence right EQ;
+precedence left DISJUNCT;
+precedence left CONJUNCT;
+precedence left LESS, GREATER;
+precedence left ADD, SUB;
+precedence right NOT, NEG;
+precedence left DOT_ACCESS, LBRACKET;
+
+start with program;
+
+/* ======================= Грамматика ========================== */
+program ::= opt_statement_list:sl
+    {: RESULT = new Program(sl); :}
+;
+
+opt_statement_list ::= statement_list:sl {: RESULT = sl; :}
+|   /* пусто */                        {: RESULT = new ArrayList<>(); :}
+;
+
+statement_list ::= statement:s SEMICOLON
+    {: List<Statement> l = new ArrayList<>(); l.add(s); RESULT = l; :}
+| statement:s SEMICOLON statement_list:sl
+    {: sl.add(0, s); RESULT = sl; :}
+;
+
+statement ::= var_decl:vd       {: RESULT = vd; :}
+           | if_stmt:is         {: RESULT = is; :}
+           | loop_stmt:ls       {: RESULT = ls; :}
+           | func_decl:fd       {: RESULT = fd; :}
+           | return_stmt:rs     {: RESULT = rs; :}
+           | expr_stmt:es       {: RESULT = es; :}
+           | robot_action:ra    {: RESULT = ra; :}
+;
+
+var_decl ::= SEISU IDENTIFIER:i opt_init:init_val
+    {: RESULT = new VarDecl(Type.SEISU, i, init_val); :}
+| RONRI IDENTIFIER:i opt_init_log:init_val
+    {: RESULT = new VarDecl(Type.RONRI, i, init_val); :}
+| RIPPTAI IDENTIFIER:i EQ LBRACE expr:x COMMA expr:y COMMA expr:z COMMA expr:obs RBRACE
+    {: RESULT = new CellDecl(i, x, y, z, obs); :}
+| RIPPTAI IDENTIFIER:i EQ expr:e
+    {: RESULT = new VarDecl(Type.RIPPTAI, i, e); :}
+| array_var_decl:a
+    {: RESULT = a; :}
+;
+
+opt_init ::= EQ expr:e             {: RESULT = e; :}
+|                                  {: RESULT = null; :}
+;
+
+opt_init_log ::= EQ expr:e         {: RESULT = e; :}
+|                                  {: RESULT = null; :}
+;
+
+array_var_decl ::=
+    HAIRETSU IDENTIFIER:i EQ LBRACE dim_list:d RBRACE
+    {: RESULT = new ArrayDecl(i, d, null); :}
+|   HAIRETSU IDENTIFIER:i EQ robot_seq_expr:seq
+    {: RESULT = new VarDecl(Type.HAIRETSU, i, seq); :}
+;
+
+dim_list ::= expr:e
+    {: List<Expression> d = new ArrayList<>(); d.add(e); RESULT = d; :}
+| dim_list:d COMMA expr:e
+    {: d.add(e); RESULT = d; :}
+;
+
+expr ::= logic_or_expr:e
+    {: RESULT = e; :}
+| postfix_expr:lv EQ expr:rv
+    {: RESULT = new Assignment(lv, rv); :}
+;
+
+logic_or_expr ::= logic_and_expr:e
+    {: RESULT = e; :}
+| logic_or_expr:l DISJUNCT logic_and_expr:r
+    {: RESULT = new BinaryOp(Operator.OR, l, r); :}
+;
+
+logic_and_expr ::= compare_expr:e
+    {: RESULT = e; :}
+| logic_and_expr:l CONJUNCT compare_expr:r
+    {: RESULT = new BinaryOp(Operator.AND, l, r); :}
+;
+
+compare_expr ::= arithmetic_expr:e
+    {: RESULT = e; :}
+| arithmetic_expr:l LESS arithmetic_expr:r
+    {: RESULT = new BinaryOp(Operator.LESS, l, r); :}
+| arithmetic_expr:l GREATER arithmetic_expr:r
+    {: RESULT = new BinaryOp(Operator.GREATER, l, r); :}
+;
+
+arithmetic_expr ::= unary_expr:e
+    {: RESULT = e; :}
+| arithmetic_expr:l ADD unary_expr:r
+    {: RESULT = new BinaryOp(Operator.ADD, l, r); :}
+| arithmetic_expr:l SUB unary_expr:r
+    {: RESULT = new BinaryOp(Operator.SUB, l, r); :}
+;
+
+unary_expr ::= postfix_expr:e
+    {: RESULT = e; :}
+| NOT unary_expr:u
+    {: RESULT = new UnaryOp(Operator.NOT, u); :}
+| SUB unary_expr:u
+    {: RESULT = new UnaryOp(Operator.NEG, u); :} %prec NEG
+;
+
+postfix_expr ::= atom_expr:e
+    {: RESULT = e; :}
+| postfix_expr:p DOT_ACCESS IDENTIFIER:prop
+    {: RESULT = new CellPropertyAccess(p, prop); :}
+| postfix_expr:p LBRACKET index_list:ix RBRACKET
+    {: RESULT = new ArrayElementAccess(p, ix); :}
+;
+
+index_list ::= expr:e
+    {: List<Expression> ix = new ArrayList<>(); ix.add(e); RESULT = ix; :}
+| index_list:ix COMMA expr:e
+    {: ix.add(e); RESULT = ix; :}
+;
+
+ruikei_arg ::= type:t
+    {: RESULT = new VarAccess(t.name()); :}
+| IDENTIFIER:i
+    {: RESULT = new VarAccess(i); :}
+| ruikei_arg:r DOT_ACCESS IDENTIFIER:prop
+    {: RESULT = new CellPropertyAccess(r, prop); :}
+| ruikei_arg:r LBRACKET index_list:ix RBRACKET
+    {: RESULT = new ArrayElementAccess(r, ix); :}
+;
+
+atom_expr ::= INT_LITERAL:i
+    {: RESULT = new IntegerLiteral(i); :}
+| HEX_LITERAL:h
+    {: RESULT = new IntegerLiteral(Integer.parseInt(h.substring(1).replaceAll("_", ""), 16)); :}
+| SHINRI
+    {: RESULT = new BooleanLiteral(true); :}
+| USO
+    {: RESULT = new BooleanLiteral(false); :}
+| IDENTIFIER:i
+    {: RESULT = new VarAccess(i); :}
+| IDENTIFIER:i LPAREN arg_list:args RPAREN
+    {: RESULT = new FunctionCall(i, args); :}
+| JIGEN IDENTIFIER:i
+    {: RESULT = new ArrayDimension(new VarAccess(i)); :}
+| RUIKEI LBRACE ruikei_arg:left ruikei_arg:right RBRACE
+    {: RESULT = new TypeComparison(left, right); :}
+| LPAREN expr:e RPAREN
+    {: RESULT = e; :}
+| MEASURE_UP    {: RESULT = new MeasureExpr(Direction.UP); :}
+| MEASURE_DOWN  {: RESULT = new MeasureExpr(Direction.DOWN); :}
+| MEASURE_LEFT  {: RESULT = new MeasureExpr(Direction.LEFT); :}
+| MEASURE_RIGHT {: RESULT = new MeasureExpr(Direction.RIGHT); :}
+| MEASURE_FORWARD {: RESULT = new MeasureExpr(Direction.FORWARD); :}
+| MEASURE_BACK  {: RESULT = new MeasureExpr(Direction.BACK); :}
+| GETPOSITION   {: RESULT = new GetPositionExpr(); :}
+| robot_seq_expr:rs
+    {: RESULT = rs; :}
+;
+
+robot_seq_expr ::= LBRACE robot_action_list:actions RBRACE
+    {: RESULT = new RobotSequenceExpr(actions); :}
+;
+
+robot_action ::=
+    MOVE_UP      {: RESULT = new MoveAction(Direction.UP); :}
+|   MOVE_DOWN    {: RESULT = new MoveAction(Direction.DOWN); :}
+|   MOVE_LEFT    {: RESULT = new MoveAction(Direction.LEFT); :}
+|   MOVE_RIGHT   {: RESULT = new MoveAction(Direction.RIGHT); :}
+|   MOVE_FORWARD {: RESULT = new MoveAction(Direction.FORWARD); :}
+|   MOVE_BACK    {: RESULT = new MoveAction(Direction.BACK); :}
+|   BREAK        {: RESULT = new BreakAction(); :}
+;
+
+robot_action_list ::= robot_action:a SEMICOLON
+    {: List<RobotAction> l = new ArrayList<>(); l.add(a); RESULT = l; :}
+| robot_action:a SEMICOLON robot_action_list:l
+    {: l.add(0, a); RESULT = l; :}
+;
+
+if_stmt ::= SORENARA expr:cond KIDO opt_statement_list:body SHUSHI
+    {: RESULT = new IfStatement(cond, body); :}
+;
+
+loop_stmt ::= SHUKI IDENTIFIER:var EQ expr:start COLON expr:end KIDO opt_statement_list:body SHUSHI
+    {: RESULT = new LoopStatement(var, start, end, body); :}
+;
+
+opt_type ::= type:t {: RESULT = t; :}
+|                   {: RESULT = null; :}
+;
+
+func_decl ::= opt_type:t KANSU IDENTIFIER:name LPAREN param_list:pl RPAREN KIDO opt_statement_list:body SHUSHI
+    {: RESULT = new FunctionDecl(t, name, pl, body); :}
+;
+
+return_stmt ::= RETURN expr:e
+    {: RESULT = new ReturnStatement(e); :}
+| RETURN
+    {: RESULT = new ReturnStatement(null); :}
+;
+
+expr_stmt ::= expr:e
+    {: RESULT = new ExpressionStatement(e); :}
+;
+
+arg_list ::=
+    {: RESULT = new ArrayList<Expression>(); :}
+| expr:e
+    {: List<Expression> a = new ArrayList<>(); a.add(e); RESULT = a; :}
+| expr:e COMMA arg_list:al
+    {: al.add(0, e); RESULT = al; :}
+;
+
+type ::= SEISU    {: RESULT = Type.SEISU; :}
+| RONRI           {: RESULT = Type.RONRI; :}
+| RIPPTAI         {: RESULT = Type.RIPPTAI; :}
+| HAIRETSU        {: RESULT = Type.HAIRETSU; :}
+;
+
+param_list ::=
+    {: RESULT = new ArrayList<Param>(); :}
+| param:p
+    {: List<Param> pl = new ArrayList<>(); pl.add(p); RESULT = pl; :}
+| param:p COMMA param_list:pl
+    {: pl.add(0, p); RESULT = pl; :}
+;
+
+param ::= type:t IDENTIFIER:n
+    {: RESULT = new Param(t, n); :}
+;

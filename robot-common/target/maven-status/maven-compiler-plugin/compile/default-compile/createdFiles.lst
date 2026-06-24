@@ -1,0 +1,6 @@
+com\lab\robot\common\console\ConsoleRenderer.class
+com\lab\robot\common\protocol\LabyrinthMap.class
+com\lab\robot\common\protocol\Position.class
+com\lab\robot\common\protocol\RobotResponse.class
+com\lab\robot\common\protocol\RobotClient.class
+com\lab\robot\common\protocol\RobotException.class
