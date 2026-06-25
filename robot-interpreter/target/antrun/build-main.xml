@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project name="maven-antrun-" default="main">
-  <target name="main">
-    <mkdir dir="C:\учеба\git_projects\robot-labyrinth\robot-interpreter\target/generated-sources/cup/com/lab/robot/interpreter/parser" />
-  </target>
-</project>
